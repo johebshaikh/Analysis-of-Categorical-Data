@@ -1,0 +1,262 @@
+---
+title: "Analysis Of Categorical Data"
+author: "Table of Content"
+
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(car)
+library(knitr)
+library(readr)
+library(ResourceSelection)
+library(ggplot2)
+library(oddsratio)
+```
+
+** Uploading file to R Studio
+```{r}
+risk <- read_csv("~/R/ProjectGroup74_Data.csv")
+head(risk)
+```
+
+** Checking structure of Dataset
+```{r}
+str(risk)
+```
+
+** Converting variables with binary response to Factor
+```{r}
+risk$anaemia <- factor(risk$anaemia, levels = c(0,1), labels = c("No","Yes"))
+risk$diabetes <- factor(risk$diabetes, levels = c(0,1), labels = c("No","Yes"))
+risk$high_blood_pressure <- factor(risk$high_blood_pressure, levels = c(0,1), labels = c("No","Yes"))
+risk$sex <- factor(risk$sex, levels = c(0,1), labels = c("Female","Male"))
+risk$smoking <- factor(risk$smoking, levels = c(0,1), labels = c("No","Yes"))
+risk$DEATH_EVENT <- factor(risk$DEATH_EVENT,levels = c(0,1), labels = c("No","Yes"))
+
+min(risk$age,na.rm = FALSE)
+max(risk$age,na.rm = FALSE)
+
+risk <- risk %>% mutate(Age_Group = 
+                           case_when(age>=35 & age<=44 ~ '35 to 44 yrs',
+                           age>=45 & age<=54 ~ '45 to 54 yrs',
+                           age>=55 & age<=64 ~ '55 to 64 yrs',
+                           age>=65 & age<=74 ~ '65 to 74 yrs',
+                           age>=75 & age<=84 ~ '75 to 84 yrs',
+                           age>=85 & age<=95 ~ '85 and above',))
+
+risk$Age_Group <- factor(risk$Age_Group, levels = c('35 to 44 yrs','45 to 54 yrs','55 to 64 yrs','65 to 74 yrs','75 to 84 yrs','85 and above'),
+                                 labels = c('35 to 44 yrs','45 to 54 yrs','55 to 64 yrs','65 to 74 yrs','75 to 84 yrs','85 and above'))
+
+head(risk)
+```
+** Summary of Data
+```{r}
+mlr::summarizeColumns(risk) %>% knitr::kable(caption = "Summary of Dataset")
+```
+** Checking levels of Factor Vairables
+
+```{r}
+levels(risk$anaemia)
+levels(risk$diabetes)
+levels(risk$high_blood_pressure)
+levels(risk$sex)
+levels(risk$smoking)
+levels(risk$DEATH_EVENT)
+levels(risk$Age_Group)
+```
+
+# Statistical Modelling
+## Model Fitting
+
+```{r}
+
+model_one<-glm(DEATH_EVENT~1,data=risk,family='binomial')
+model_two<-glm(DEATH_EVENT~.,data=risk,family='binomial')
+final_model <- step(model_one, 
+                   scope = list(lower = model_one,
+                                upper = model_two),
+                   direction = "forward")
+
+```
+```{r}
+summary(final_model)
+final_model$coefficients
+final_model$residuals
+final_model$fitted.values
+final_model$linear.predictors
+final_model$deviance
+final_model$aic
+final_model$null.deviance
+final_model$iter
+final_model$df.residual
+final_model$df.null
+final_model
+
+glm(formula = DEATH_EVENT ~ time + ejection_fraction + serum_creatinine + 
+    age + serum_sodium, family = "binomial", data = risk)
+
+```
+
+** Final Model **
+Logit(Probablity of Death by Cardiovascular Disease) = 9.49303 - 0.02089 x time - 0.07343 x ejection_fraction + 0.68599 x serum_creatinine + 0.04247 x age - 0.06456 x serum_sodium
+
+## Residual Analysis
+```{r}
+summary(final_model)
+par(mfrow = c(2,2))
+plot(final_model)
+
+plot(density(resid(final_model, type='response')))
+lines(density(resid(final_model, type='response')), col='red')
+
+plot(density(resid(final_model, type='pearson')))
+lines(density(resid(final_model, type='pearson')), col='red')
+
+plot(density(rstandard(final_model, type='pearson')))
+lines(density(rstandard(final_model, type='pearson')), col='red')
+```
+
+In residuals vs fitted, the predicted values lie between -4 to 1 while beyond one are some outliers. We can see some linearity between values. In Normal Q-Q plot, the value are in the range between -3 to 3 with linearity between the values. In scale-location plot it is seen that the values lie between -4 to 2 while there are some outliers beyond 2. It is seen that, predicted values and sqr.root of std.deviance residuals intersect at 0 at x-axis and 1 at y-axis. In the residuals vs leverage plot, all values are located between 0.00 to 0.05 while there are some outliers beyond 0.05.
+
+
+## Response Analysis
+```{r}
+summary(final_model)
+
+survival_fracejec <- ggplot(data = risk, mapping = aes(x = DEATH_EVENT, y = ejection_fraction), color = "blue") +
+  geom_bar(stat = "identity")+
+  theme_light()+
+  labs(x = "Survival Status")
+survival_fracejec
+
+survival_creatinine <- ggplot(data = risk, mapping = aes(x = DEATH_EVENT, y = serum_creatinine), color = "blue") +
+  geom_bar(stat = "identity")+
+  theme_light()+
+  labs(x = "Survival Status")
+survival_creatinine
+
+survival_sodium <- ggplot(data = risk, mapping = aes(x = DEATH_EVENT, y = serum_sodium)) +
+  geom_bar(stat = "identity")+
+  theme_light()+
+  labs(x = "Survival Status")
+survival_sodium
+
+```
+
+## Goodness of Fit
+```{r}
+
+modelone_res <- model_one$deviance
+modeltwo_res <- model_two$deviance
+finalmodel_res <- final_model$deviance
+
+modelone_dfres <- model_one$df.residual
+modeltwo_dfres <- model_two$df.residual
+finalmodel_dfres <- final_model$df.residual
+
+modelone_resdf <- modelone_res/modelone_dfres
+modeltwo_resdf <- modeltwo_res/modeltwo_dfres
+finalmodel_resdf <- finalmodel_res/finalmodel_dfres
+
+res <- c(modelone_res,modelone_dfres,modelone_resdf)
+
+dfres <- c(modeltwo_res,modeltwo_dfres,modeltwo_resdf)
+
+resdf <- c(finalmodel_res,finalmodel_dfres,finalmodel_resdf)
+
+res
+dfres
+resdf
+
+gender.table <- with(risk, table(DEATH_EVENT, sex)) 
+gender.table
+chisq.test(gender.table)
+
+smoke.table <- with(risk, table(DEATH_EVENT, smoking)) 
+smoke.table
+chisq.test(smoke.table)
+
+anaemia.table <- with(risk, table(DEATH_EVENT, anaemia)) 
+anaemia.table
+chisq.test(anaemia.table)
+
+diabetes.table <- with(risk, table(DEATH_EVENT, diabetes)) 
+diabetes.table
+chisq.test(diabetes.table)
+
+highbp.table <- with(risk, table(DEATH_EVENT, high_blood_pressure)) 
+highbp.table
+chisq.test(highbp.table)
+
+highcreatinine.table <- with(risk, table(DEATH_EVENT, serum_creatinine)) 
+highcreatinine.table
+chisq.test(highcreatinine.table)
+
+highejecfrac.table <- with(risk, table(DEATH_EVENT, ejection_fraction)) 
+highejecfrac.table
+chisq.test(highejecfrac.table)
+
+highsodium.table <- with(risk, table(DEATH_EVENT, serum_sodium)) 
+highsodium.table
+chisq.test(highsodium.table)
+
+```
+
+## Confidence Intervals
+```{r}
+summary(final_model)
+
+CInt <- exp(confint(final_model))
+CI <- exp(confint.default(final_model))
+
+CInt
+CI
+
+
+final.predict <- data.frame(DEATH_EVENT = 0, ejection_fraction = 60,time = 10,serum_creatinine = 1.90, age = 45, serum_sodium = 130)
+alpha<-0.05
+model.predict <- predict(object = final_model, newdata = final.predict, type = "response", se = TRUE)  
+Interval<-model.predict$fit + qnorm(p = c(alpha/2, 1-alpha/2))*model.predict$se.fit  
+Interval
+
+
+```
+
+## Hypothesis Test
+```{r}
+t.test(risk$age~risk$DEATH_EVENT)
+t.test(risk$ejection_fraction~risk$DEATH_EVENT)
+t.test(risk$serum_creatinine~risk$DEATH_EVENT)
+
+summary(anova(final_model))
+Anova(final_model , test = "LR")
+```
+
+## Sensitivity Analysis
+```{r}
+summary(final_model)
+
+exp(cbind(Odds_and_OR=coef(final_model), confint(final_model)))
+exp(coef(final_model))
+exp(final_model$coefficients[2])
+
+Anova(final_model)
+```
+
+
+
+# Reference
+Dataset from GitHub by Dr. Vural Aksakalli. Reference of Website: vaksakalli/datasets. (2020). Retrieved 27 September 2020, from https://github.com/vaksakalli/datasets/blob/master/heart_failure.csv
